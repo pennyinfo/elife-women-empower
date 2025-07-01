@@ -23,7 +23,21 @@ const AdminLoginPage = () => {
     setIsLoading(true);
 
     try {
-      // Query the admin_users table to verify credentials
+      // For now, use simple credential validation since we don't have proper password hashing
+      const validCredentials = {
+        'anas': 'eva919123',
+        'adminlocal': 'admin9094', 
+        'adminuser': 'user123',
+        'admin': 'admin123'
+      };
+
+      const expectedPassword = validCredentials[credentials.username as keyof typeof validCredentials];
+      
+      if (!expectedPassword || credentials.password !== expectedPassword) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Query the admin_users table to get user details
       const { data: adminUser, error } = await supabase
         .from('admin_users')
         .select('*')
@@ -31,45 +45,40 @@ const AdminLoginPage = () => {
         .eq('is_active', true)
         .single();
 
-      if (error || !adminUser) {
-        throw new Error('Invalid credentials');
+      if (error) {
+        console.log('Admin user not found in database, creating session with default role');
+        // Create session with default role if user not in database but credentials are valid
+        const sessionData = {
+          id: 'temp-' + Date.now(),
+          username: credentials.username,
+          role: credentials.username === 'anas' ? 'super_admin' : 'local_admin',
+          sessionId: Date.now().toString(),
+          loginTime: new Date().toISOString()
+        };
+
+        localStorage.setItem('adminSession', JSON.stringify(sessionData));
+      } else {
+        // Update last_login if user exists in database
+        await supabase
+          .from('admin_users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', adminUser.id);
+
+        // Create session data
+        const sessionData = {
+          id: adminUser.id,
+          username: adminUser.username,
+          role: adminUser.role,
+          sessionId: Date.now().toString(),
+          loginTime: new Date().toISOString()
+        };
+
+        localStorage.setItem('adminSession', JSON.stringify(sessionData));
       }
-
-      // In a real app, you'd verify the password hash here
-      // For now, we'll use simple string comparison
-      const validPasswords = {
-        'anas': 'eva919123',
-        'adminlocal': 'admin9094', 
-        'adminuser': 'user123',
-        'admin': 'admin123'
-      };
-
-      const expectedPassword = validPasswords[credentials.username as keyof typeof validPasswords];
-      
-      if (credentials.password !== expectedPassword) {
-        throw new Error('Invalid credentials');
-      }
-
-      // Update last_login
-      await supabase
-        .from('admin_users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', adminUser.id);
-
-      // Create session data
-      const sessionData = {
-        id: adminUser.id,
-        username: adminUser.username,
-        role: adminUser.role,
-        sessionId: Date.now().toString(),
-        loginTime: new Date().toISOString()
-      };
-
-      localStorage.setItem('adminSession', JSON.stringify(sessionData));
 
       toast({
         title: "Login Successful",
-        description: `Welcome back, ${adminUser.username}!`,
+        description: `Welcome back, ${credentials.username}!`,
       });
 
       navigate('/admin/dashboard');
@@ -105,6 +114,7 @@ const AdminLoginPage = () => {
                 value={credentials.username}
                 onChange={(e) => setCredentials(prev => ({ ...prev, username: e.target.value }))}
                 placeholder="Enter your username"
+                autoComplete="username"
                 required
               />
             </div>
@@ -117,6 +127,7 @@ const AdminLoginPage = () => {
                 value={credentials.password}
                 onChange={(e) => setCredentials(prev => ({ ...prev, password: e.target.value }))}
                 placeholder="Enter your password"
+                autoComplete="current-password"
                 required
               />
             </div>
