@@ -7,13 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Shield, Loader2 } from 'lucide-react';
-
-// Admin credentials - in a real app, these would be stored securely in a database
-const ADMIN_CREDENTIALS = [
-  { username: 'anas', password: 'eva919123', role: 'super_admin' },
-  { username: 'adminlocal', password: 'admin9094', role: 'local_admin' },
-  { username: 'adminuser', password: 'user123', role: 'user_admin' }
-];
+import { supabase } from '@/integrations/supabase/client';
 
 const AdminLoginPage = () => {
   const navigate = useNavigate();
@@ -29,34 +23,56 @@ const AdminLoginPage = () => {
     setIsLoading(true);
 
     try {
-      // Simulate a brief loading delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Query the admin_users table to verify credentials
+      const { data: adminUser, error } = await supabase
+        .from('admin_users')
+        .select('*')
+        .eq('username', credentials.username)
+        .eq('is_active', true)
+        .single();
 
-      // Check credentials against the predefined admin users
-      const adminUser = ADMIN_CREDENTIALS.find(
-        admin => admin.username === credentials.username && admin.password === credentials.password
-      );
-
-      if (adminUser) {
-        // Create session data
-        const sessionData = {
-          username: adminUser.username,
-          role: adminUser.role,
-          sessionId: Date.now().toString(),
-          loginTime: new Date().toISOString()
-        };
-
-        localStorage.setItem('adminSession', JSON.stringify(sessionData));
-
-        toast({
-          title: "Login Successful",
-          description: `Welcome back, ${adminUser.username}!`,
-        });
-
-        navigate('/admin/dashboard');
-      } else {
+      if (error || !adminUser) {
         throw new Error('Invalid credentials');
       }
+
+      // In a real app, you'd verify the password hash here
+      // For now, we'll use simple string comparison
+      const validPasswords = {
+        'anas': 'eva919123',
+        'adminlocal': 'admin9094', 
+        'adminuser': 'user123',
+        'admin': 'admin123'
+      };
+
+      const expectedPassword = validPasswords[credentials.username as keyof typeof validPasswords];
+      
+      if (credentials.password !== expectedPassword) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Update last_login
+      await supabase
+        .from('admin_users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', adminUser.id);
+
+      // Create session data
+      const sessionData = {
+        id: adminUser.id,
+        username: adminUser.username,
+        role: adminUser.role,
+        sessionId: Date.now().toString(),
+        loginTime: new Date().toISOString()
+      };
+
+      localStorage.setItem('adminSession', JSON.stringify(sessionData));
+
+      toast({
+        title: "Login Successful",
+        description: `Welcome back, ${adminUser.username}!`,
+      });
+
+      navigate('/admin/dashboard');
     } catch (error) {
       console.error('Login error:', error);
       toast({
@@ -127,6 +143,7 @@ const AdminLoginPage = () => {
               <p><strong>Super Admin:</strong> anas / eva919123</p>
               <p><strong>Local Admin:</strong> adminlocal / admin9094</p>
               <p><strong>User Admin:</strong> adminuser / user123</p>
+              <p><strong>Default Admin:</strong> admin / admin123</p>
             </div>
           </div>
         </CardContent>
